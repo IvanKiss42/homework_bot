@@ -6,6 +6,7 @@ import requests
 import os
 from dotenv import load_dotenv
 import telegram
+from http import HTTPStatus
 
 from exceptions import APIError
 
@@ -25,7 +26,7 @@ timestamp = int(time.time()) - SECOND_IN_ONE_MONTH
 
 PRACTICUM_TOKEN = os.getenv('TOKEN_PRAK')
 TELEGRAM_TOKEN = os.getenv('TOKEN_BOT')
-TELEGRAM_CHAT_ID = os.getenv('USER_ID')
+TELEGRAM_CHAT_ID = os.getenv('TELEGRAM_CHAT_ID')
 
 RETRY_PERIOD = 600
 ENDPOINT = 'https://practicum.yandex.ru/api/user_api/homework_statuses/'
@@ -41,16 +42,16 @@ HOMEWORK_VERDICTS = {
 
 def check_tokens():
     """Check tokens and chat id."""
-    if PRACTICUM_TOKEN is None:
+    if not PRACTICUM_TOKEN:
         logging.critical('Practicum token is incorrect!')
-        return True
+        return False
     if TELEGRAM_TOKEN is None:
         logging.critical('Telegram bot token absent or is invalid!')
-        return True
+        return False
     if TELEGRAM_CHAT_ID is None:
         logging.critical('User ID is incorrect!')
-        return True
-    return False
+        return False
+    return True
 
 
 def send_message(bot, message):
@@ -67,28 +68,34 @@ def get_api_answer(timestamp):
     payload = {'from_date': timestamp}
     try:
         homeworks = requests.get(ENDPOINT, headers=HEADERS, params=payload)
-        if homeworks.status_code != 200:
+        if homeworks.status_code != HTTPStatus.OK:
             raise APIError(f'Some troubles with endpoint, status code:'
                            f'{homeworks.status_code}')
-    except requests.RequestException:
-        logging.error(f'Some troubles with endpoint, status code:'
-                      f'{homeworks.status_code}')
-    return homeworks.json()
+    except requests.RequestException as error:
+        logging.error(f'Troubles with endpoint, RequestException occurred:'
+                      f'{error}')
+        raise APIError(f'Troubles with endpoint, RequestException occurred:'
+                       f'{error}')
+    try:
+        return homeworks.json()
+    except requests.exceptions.JSONDecodeError as error:
+        logging.error(f'Troubles with converting homework to json standard'
+                      f'{error}')
 
 
 def check_response(response):
     """Check response and write problems in log."""
-    if type(response) is not dict:
+    if not isinstance(response, dict):
         raise TypeError('Response in not a dict')
-    if 'homeworks' not in response.keys():
+    if 'homeworks' not in response:
         raise TypeError('There is no homeworks in the response')
-    if type(response['homeworks']) is not list:
+    if not isinstance(response['homeworks'], list):
         raise TypeError('Homeworks are not a list')
 
 
 def parse_status(homework):
     """Check homework content."""
-    if 'homework_name' not in homework.keys():
+    if 'homework_name' not in homework:
         raise AttributeError('Unexpected homework status!')
     homework_name = homework['homework_name']
     homework_status = homework['status']
@@ -101,23 +108,29 @@ def parse_status(homework):
 def main():
     """Основная логика работы бота."""
     last_status = ''
-    if check_tokens():
+    if not check_tokens():
         exit()
+    bot = telegram.Bot(token=TELEGRAM_TOKEN)
     while True:
         try:
             response = get_api_answer(timestamp)
             check_response(response)
-            homework = response['homeworks'][0]
-            current_status = homework['status']
+            try:
+                homework = response['homeworks'][0]
+                current_status = homework['status']
+            except IndexError:
+                logging.error('homeworks dict is empty')
+            except KeyError:
+                logging.error('status is not a valid key for homework')
             if current_status != last_status:
                 message = parse_status(homework)
                 last_status = current_status
-                bot = telegram.Bot(token=TELEGRAM_TOKEN)
                 send_message(bot, message)
             else:
                 logging.debug('No new updates')
         except Exception as error:
             message = f'Сбой в работе программы: {error}'
+            send_message(bot, message)
             logging.error(f'{message}')
         finally:
             time.sleep(RETRY_PERIOD)
