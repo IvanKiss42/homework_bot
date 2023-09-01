@@ -91,6 +91,10 @@ def check_response(response):
         raise TypeError('There is no homeworks in the response')
     if not isinstance(response['homeworks'], list):
         raise TypeError('Homeworks are not a list')
+    if not response['homeworks'][0]:
+        raise IndexError('homeworks list is empty')
+    if 'status' not in response['homeworks'][0]:
+        raise KeyError('status is not a valid key for homework')
 
 
 def parse_status(homework):
@@ -115,13 +119,8 @@ def main():
         try:
             response = get_api_answer(timestamp)
             check_response(response)
-            try:
-                homework = response['homeworks'][0]
-                current_status = homework['status']
-            except IndexError:
-                logging.error('homeworks dict is empty')
-            except KeyError:
-                logging.error('status is not a valid key for homework')
+            homework = response['homeworks'][0]
+            current_status = homework['status']
             if current_status != last_status:
                 message = parse_status(homework)
                 last_status = current_status
