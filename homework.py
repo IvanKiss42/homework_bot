@@ -72,8 +72,6 @@ def get_api_answer(timestamp):
             raise APIError(f'Some troubles with endpoint, status code:'
                            f'{homeworks.status_code}')
     except requests.RequestException as error:
-        logging.error(f'Troubles with endpoint, RequestException occurred:'
-                      f'{error}')
         raise APIError(f'Troubles with endpoint, RequestException occurred:'
                        f'{error}')
     try:
@@ -91,7 +89,7 @@ def check_response(response):
         raise TypeError('There is no homeworks in the response')
     if not isinstance(response['homeworks'], list):
         raise TypeError('Homeworks are not a list')
-    if not response['homeworks'][0]:
+    if not response['homeworks']:
         raise IndexError('homeworks list is empty')
     if 'status' not in response['homeworks'][0]:
         raise KeyError('status is not a valid key for homework')
